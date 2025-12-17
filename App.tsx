@@ -5,7 +5,7 @@ import { FacultyDashboard } from './components/DashboardFaculty';
 import { AdminDashboard } from './components/DashboardAdmin';
 import { SuperAdminDashboard } from './components/DashboardSuperAdmin';
 import { User, QuestionPaper, Question, Role } from './types';
-import { MOCK_USERS, supabase, isSupabaseConfigured } from './lib/supabase';
+import { MOCK_USERS, supabase, isSupabaseConfigured, isDemoMode } from './lib/supabase';
 
 // Helper to create mock questions
 const createMockQuestions = (count: number, diff: 'EASY' | 'MEDIUM' | 'HARD'): Question[] => 
@@ -59,16 +59,28 @@ function App() {
 
   // Initialize Supabase Session Listener
   useEffect(() => {
-    // If we are in demo mode (no valid URL), skip the network call entirely
-    if (!isSupabaseConfigured) {
+    // If we are in demo mode OR no backend configured, skip the network call
+    if (!isSupabaseConfigured || isDemoMode) {
         setIsAuthChecking(false);
         return;
     }
 
+    let mounted = true;
+
+    // Safety timeout: if auth check hangs (e.g. backend down/misconfigured), stop loading after 2s
+    const safetyTimeout = setTimeout(() => {
+        if (mounted && isAuthChecking) {
+            console.warn("Auth check timed out. Defaulting to landing.");
+            setIsAuthChecking(false);
+        }
+    }, 2000);
+
     const initSession = async () => {
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            if (error) throw error;
+            
+            if (mounted && session?.user) {
                 const role = (session.user.user_metadata.role as Role) || 'FACULTY';
                 const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'User';
                 
@@ -83,7 +95,8 @@ function App() {
         } catch (e) {
             console.error("Session check failed", e);
         } finally {
-            setIsAuthChecking(false);
+            if (mounted) setIsAuthChecking(false);
+            clearTimeout(safetyTimeout);
         }
     };
 
@@ -103,7 +116,11 @@ function App() {
         }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+        mounted = false;
+        subscription.unsubscribe();
+        clearTimeout(safetyTimeout);
+    };
   }, []);
 
   const handleLogin = (loggedInUser: User) => {
@@ -112,7 +129,7 @@ function App() {
   };
 
   const handleLogout = async () => {
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !isDemoMode) {
         await supabase.auth.signOut();
     }
     setUser(null);
@@ -146,7 +163,12 @@ function App() {
   };
 
   if (isAuthChecking) {
-     return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-600 font-bold">Loading Q-Genius...</div>;
+     return (
+         <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col gap-4">
+             <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+             <div className="text-indigo-600 font-bold">Connecting to Q-Genius...</div>
+         </div>
+     );
   }
 
   if (view === 'LANDING') {

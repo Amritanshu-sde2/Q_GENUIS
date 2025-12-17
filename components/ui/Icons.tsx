@@ -18,7 +18,8 @@ import {
   BarChart3,
   Search,
   Menu,
-  X
+  X,
+  Settings
 } from 'lucide-react';
 import React from 'react';
 
@@ -52,5 +53,6 @@ export const Icons = {
   Search: Search,
   Menu: Menu,
   Close: X,
-  Google: GoogleIcon
+  Google: GoogleIcon,
+  Settings: Settings
 };
